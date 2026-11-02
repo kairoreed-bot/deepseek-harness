@@ -9,6 +9,8 @@
   },
   "type": "module",
   "main": "lib/main.js",
+  "desktopName": "deepseek-harness.desktop",
+  "homepage": "https://github.com/kairoreed-bot/deepseek-harness",
   "scripts": {
     "test:installer": "node scripts/test-windows-installer.mjs",
     "build": "tsc -b && pnpm run bundle",

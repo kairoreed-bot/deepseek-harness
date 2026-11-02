@@ -28,7 +28,7 @@ export interface DesktopPublishRoute {
   readonly channel: 'nightly' | 'latest'
   readonly runnerName: string
   readonly runnerLabel: string
-  readonly target: 'mac-arm64' | 'mac-x64' | 'win-x64'
+  readonly target: 'mac-arm64' | 'mac-x64' | 'win-x64' | 'linux-x64' // LINUX-PATCH
   readonly preset: 'test' | 'production'
 }
 

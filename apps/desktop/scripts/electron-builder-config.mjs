@@ -66,7 +66,10 @@ export function createElectronBuilderConfig(
   if (skipNotarization && (unsigned || resolvedPlatform !== 'darwin')) throw new Error('Skipping notarization requires a signed macOS build')
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = resolvedPlatform === 'win32'
-  const policy = packagesMacOS && unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
+  // LINUX-PATCH: unsigned linux builds skip the mandatory-update policy exactly like unsigned macOS,
+  // otherwise electron-builder's own config load demands DSH_DESKTOP_MANDATORY_UPDATE_*_ORIGIN.
+  const packagesLinux = resolvedPlatform === 'linux'
+  const policy = (packagesMacOS || packagesLinux) && unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
   const macOSSigning = packagesMacOS && !unsigned ? resolveMacOSSigningEnvironment(env) : undefined
   if (packagesMacOS && !unsigned && !skipNotarization) resolveMacOSNotarizationEnvironment(env)
@@ -115,6 +118,8 @@ export function createElectronBuilderConfig(
       ...packaged === undefined ? {} : { dshBuildCommit: packaged.commit, dshBuildDirty: packaged.dirty },
     },
     productName: 'DeepSeek Harness',
+    // LINUX-PATCH: fpm (deb/rpm) needs a homepage, but electron-builder rejects `homepage` at the
+    // config root, so it is declared in apps/desktop/package.json instead.
     // The default copyright uses author.name; this line names the product instead.
     copyright: `Copyright © ${new Date().getFullYear()} \${productName}`,
     // Unsigned builds carry their own suffix so a shared file can never pass for a release artifact.
@@ -256,11 +261,26 @@ export function createElectronBuilderConfig(
       // LINUX-PATCH: real linux targets. AppImage is what electron-updater consumes;
       // tar.gz / deb / rpm are the convenience formats people actually install.
       category: 'Development',
+      // electron-builder derives the binary name from the scoped package name on Linux, which yields
+      // the illegal "@deepseek-aidsh-desktop". Name it explicitly.
+      executableName: 'deepseek-harness',
+      // LINUX-PATCH: without a desktopName the WM_CLASS does not match the .desktop entry, so
+      // desktop environments cannot associate running windows with the launcher icon.
+      syncDesktopName: true,
       icon: fileURLToPath(new URL('../resources/icon.png', import.meta.url)),
       maintainer: 'Kairo Reed <kairoreed-bot@users.noreply.github.com>',
       synopsis: 'DeepSeek Harness desktop',
       description: 'DeepSeek Harness desktop shell, unofficial Linux build.',
       target: ['AppImage', 'tar.gz', 'deb', 'rpm'],
+    },
+    // LINUX-PATCH: fpm packages deb/rpm under this name. Without it electron-builder uses the
+    // product name ("DeepSeek Harness"), which rpmbuild rejects because package names cannot
+    // contain spaces. packageName is only valid on the per-target blocks, not on `linux`.
+    deb: {
+      packageName: 'deepseek-harness',
+    },
+    rpm: {
+      packageName: 'deepseek-harness',
     },
     nsis: {
       uninstallDisplayName: '${productName}',

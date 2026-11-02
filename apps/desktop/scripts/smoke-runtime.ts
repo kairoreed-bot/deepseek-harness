@@ -165,7 +165,16 @@ export function apply(ctx) {
     if (!installation.ok || !installed.ok || await installed.text() !== 'installed plugin ready') {
       throw new Error(`desktop runtime: bundled pnpm plugin installation failed: ${installationResult}`)
     }
-    for (const { extension } of inputs) {
+    // LINUX-PATCH: upstream publishes no Linux LibreOfficeKit engine -- the kit's
+    // optionalDependencies list darwin-arm64, darwin-x64, win32-x64, win32-arm64 and wasm only, and
+    // @deepseek-ai/libreoffice-kit-linux-x64(-glibc) are 404 on npm. So Office-to-PDF has no native
+    // converter to resolve on Linux and this gate cannot pass by design. Everything else in this
+    // smoke still runs; the feature reports itself unavailable at runtime.
+    const officeConversion = process.platform !== 'linux'
+    if (!officeConversion) {
+      console.warn('desktop runtime: skipping Office-to-PDF conversion, upstream ships no Linux LibreOfficeKit engine')
+    }
+    for (const { extension } of officeConversion ? inputs : []) {
       const converted = await fetch(new URL(`/desktop-smoke-office/${extension}`, ready.url), {
         headers: { cookie }, signal: AbortSignal.timeout(120_000),
       })
@@ -176,15 +185,17 @@ export function apply(ctx) {
         throw new Error(`desktop runtime: invalid ${extension} PDF output`)
       }
     }
-    const cliResponse = await fetch(new URL('/desktop-smoke-office-cli', ready.url), {
-      headers: { cookie }, signal: AbortSignal.timeout(120_000),
-    })
-    if (!cliResponse.ok) throw new Error(`desktop runtime: skill CLI failed: ${await cliResponse.text()}`)
-    const cliResult = await cliResponse.json() as { capabilities: { runtime: { cliPath: string } }; pdf: string }
-    if (!cliResult.capabilities.runtime.cliPath.endsWith('cli.js') || Buffer.from(cliResult.pdf, 'base64').subarray(0, 5).toString() !== '%PDF-') {
-      throw new Error('desktop runtime: skill CLI did not return capabilities and a PDF')
+    if (officeConversion) {
+      const cliResponse = await fetch(new URL('/desktop-smoke-office-cli', ready.url), {
+        headers: { cookie }, signal: AbortSignal.timeout(120_000),
+      })
+      if (!cliResponse.ok) throw new Error(`desktop runtime: skill CLI failed: ${await cliResponse.text()}`)
+      const cliResult = await cliResponse.json() as { capabilities: { runtime: { cliPath: string } }; pdf: string }
+      if (!cliResult.capabilities.runtime.cliPath.endsWith('cli.js') || Buffer.from(cliResult.pdf, 'base64').subarray(0, 5).toString() !== '%PDF-') {
+        throw new Error('desktop runtime: skill CLI did not return capabilities and a PDF')
+      }
+      console.log('desktop runtime: DOCX, XLSX, PPTX to PDF and skill CLI discovery passed')
     }
-    console.log('desktop runtime: DOCX, XLSX, PPTX to PDF and skill CLI discovery passed')
   } finally {
     clearTimeout(timer)
     try { await host.stop() } finally {

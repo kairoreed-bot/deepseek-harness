@@ -153,7 +153,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-            xvfb x11-utils x11-xkb-utils xdotool openbox ffmpeg libgtk-3-0 libnss3 libasound2t64
+            xvfb x11-utils x11-xkb-utils xdotool openbox ffmpeg libgtk-3-0 libnss3 libasound2t64 \
+            rpm
 
       - name: Package linux-x64
         run: pnpm run package:desktop:linux:x64:unsigned
