@@ -253,8 +253,14 @@ export function createElectronBuilderConfig(
       target: ['nsis'],
     },
     linux: {
+      // LINUX-PATCH: real linux targets. AppImage is what electron-updater consumes;
+      // tar.gz / deb / rpm are the convenience formats people actually install.
       category: 'Development',
-      target: ['AppImage'],
+      icon: fileURLToPath(new URL('../resources/icon.png', import.meta.url)),
+      maintainer: 'Kairo Reed <kairoreed-bot@users.noreply.github.com>',
+      synopsis: 'DeepSeek Harness desktop',
+      description: 'DeepSeek Harness desktop shell, unofficial Linux build.',
+      target: ['AppImage', 'tar.gz', 'deb', 'rpm'],
     },
     nsis: {
       uninstallDisplayName: '${productName}',
@@ -269,6 +275,15 @@ export function createElectronBuilderConfig(
       differentialPackage: true,
     },
     detectUpdateChannel: false,
-    publish: update === undefined ? null : [{ provider: 'generic', url: update.publicUrl, channel: update.channel }],
+    // LINUX-PATCH: opt-in GitHub-Releases update feed, so the fork's AppImage can self-update from
+    // its own releases. Inactive unless the build sets both env vars; mac/win behaviour is unchanged.
+    publish: env.DSH_LINUX_UPDATE_OWNER !== undefined && env.DSH_LINUX_UPDATE_REPO !== undefined
+      ? [{
+        provider: 'github',
+        owner: env.DSH_LINUX_UPDATE_OWNER,
+        repo: env.DSH_LINUX_UPDATE_REPO,
+        releaseType: 'release',
+      }]
+      : update === undefined ? null : [{ provider: 'generic', url: update.publicUrl, channel: update.channel }],
   }
 }

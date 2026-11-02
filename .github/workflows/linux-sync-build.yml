@@ -1,0 +1,202 @@
+name: Linux desktop (sync, build, release)
+
+# One workflow on purpose: a push made with GITHUB_TOKEN does not trigger other workflows, so
+# sync + build + release live in the same run instead of chaining them.
+#
+# Every 6 hours: merge deepseek-ai/deepseek-harness master into `linux`. Clean merge -> build,
+# smoke test, and publish a release when the desktop package version is new. Conflict -> stop,
+# open or update a `sync-conflict` issue, and leave the merge to the agent that watches for it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a GitHub release when the package version is new
+        type: boolean
+        default: true
+      skip_sync:
+        description: Build the current linux branch without merging upstream
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 */6 * * *'
+  push:
+    branches: [linux]
+    paths-ignore:
+      - '**.md'
+      - 'linux/**'
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: linux-desktop
+  cancel-in-progress: false
+
+env:
+  LINUX_BRANCH: linux
+  UPSTREAM_REPO: deepseek-ai/deepseek-harness
+  # Enables the GitHub-Releases update feed inside electron-builder for the linux target only.
+  DSH_LINUX_UPDATE_OWNER: kairoreed-bot
+  DSH_LINUX_UPDATE_REPO: deepseek-harness
+
+jobs:
+  sync:
+    name: Merge upstream
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.skip_sync != true)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      conflict: ${{ steps.merge.outputs.conflict }}
+      upstream_sha: ${{ steps.merge.outputs.upstream_sha }}
+      advanced: ${{ steps.merge.outputs.advanced }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.LINUX_BRANCH }}
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name 'kairoreed-bot'
+          git config user.email 'kairoreed-bot@users.noreply.github.com'
+
+      - name: Merge upstream master
+        id: merge
+        run: |
+          set +e
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git" 2>/dev/null
+          git fetch --no-tags upstream master
+          upstream_sha="$(git rev-parse upstream/master)"
+          echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
+
+          git merge --no-commit --no-ff upstream/master > /tmp/merge.log 2>&1
+          status=$?
+
+          if [ "$status" -ne 0 ]; then
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+            echo "advanced=false" >> "$GITHUB_OUTPUT"
+            git diff --name-only --diff-filter=U > /tmp/conflicts.txt 2>/dev/null
+            {
+              echo '### upstream merge conflict'
+              echo
+              echo "Upstream commit: \`${upstream_sha}\`"
+              echo
+              echo 'Conflicted files:'
+              echo '```'
+              cat /tmp/conflicts.txt
+              echo '```'
+              echo '```'
+              tail -30 /tmp/merge.log
+              echo '```'
+              echo
+              echo 'The linux branch was not modified. An agent resolves this locally, then pushes.'
+            } > /tmp/issue-body.md
+            git merge --abort
+          else
+            echo "conflict=false" >> "$GITHUB_OUTPUT"
+            if git diff --cached --quiet; then
+              echo "advanced=false" >> "$GITHUB_OUTPUT"
+              echo "Already up to date with upstream ${upstream_sha}."
+            else
+              echo "advanced=true" >> "$GITHUB_OUTPUT"
+              git commit -m "merge upstream ${upstream_sha:0:12} into ${LINUX_BRANCH}" -m "Automated upstream sync. Conflicts are escalated to a sync-conflict issue instead of being auto-resolved."
+              git push origin "HEAD:${LINUX_BRANCH}"
+            fi
+          fi
+
+      - name: Open or update sync-conflict issue
+        if: steps.merge.outputs.conflict == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing="$(gh issue list --label sync-conflict --state open --json number --jq '.[0].number' || true)"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file /tmp/issue-body.md
+          else
+            gh issue create --title "upstream sync conflict" --label sync-conflict --body-file /tmp/issue-body.md
+          fi
+          echo "::warning::upstream merge conflict; see the sync-conflict issue"
+
+  build:
+    name: Build and release
+    needs: sync
+    if: |
+      always()
+      && needs.sync.result != 'failure'
+      && needs.sync.outputs.conflict != 'true'
+      && (github.event_name == 'push' || needs.sync.outputs.advanced == 'true' || inputs.skip_sync == true || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.LINUX_BRANCH }}
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Read desktop version
+        id: version
+        run: echo "version=$(node -p "require('./apps/desktop/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Install smoke-test tooling
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            xvfb x11-utils x11-xkb-utils xdotool openbox ffmpeg libgtk-3-0 libnss3 libasound2t64
+
+      - name: Package linux-x64
+        run: pnpm run package:desktop:linux:x64:unsigned
+
+      - name: Collect artifacts
+        run: |
+          bash linux/collect-artifacts.sh \
+            apps/desktop/.desktop-build/targets/linux-x64/unsigned-artifacts \
+            dist-linux \
+            "${{ steps.version.outputs.version }}"
+
+      - name: Boot smoke test
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash linux/smoke-appimage.sh "dist-linux/deepseek-harness-${VERSION}-linux-x64.AppImage" smoke
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64-${{ steps.version.outputs.version }}
+          path: |
+            dist-linux/*
+            smoke/window.png
+            smoke/app.log
+          retention-days: 14
+
+      - name: Publish release
+        if: github.event_name != 'workflow_dispatch' || inputs.publish == true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tag="linux-v${VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag already exists; uploading/refreshing assets only"
+            gh release upload "$tag" dist-linux/* --clobber
+            exit 0
+          fi
+          gh release create "$tag" \
+            --target "$LINUX_BRANCH" \
+            --title "DeepSeek Harness ${VERSION} (Linux x64)" \
+            --notes "Automated Linux x64 build of ${VERSION}.
+
+          Unofficial community build. Formats: AppImage, tar.gz, deb, rpm.
+          \`latest-linux.yml\` is the electron-updater feed; the AppImage self-updates from this release." \
+            dist-linux/*
