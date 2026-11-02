@@ -165,16 +165,10 @@ export function apply(ctx) {
     if (!installation.ok || !installed.ok || await installed.text() !== 'installed plugin ready') {
       throw new Error(`desktop runtime: bundled pnpm plugin installation failed: ${installationResult}`)
     }
-    // LINUX-PATCH: upstream publishes no Linux LibreOfficeKit engine -- the kit's
-    // optionalDependencies list darwin-arm64, darwin-x64, win32-x64, win32-arm64 and wasm only, and
-    // @deepseek-ai/libreoffice-kit-linux-x64(-glibc) are 404 on npm. So Office-to-PDF has no native
-    // converter to resolve on Linux and this gate cannot pass by design. Everything else in this
-    // smoke still runs; the feature reports itself unavailable at runtime.
-    const officeConversion = process.platform !== 'linux'
-    if (!officeConversion) {
-      console.warn('desktop runtime: skipping Office-to-PDF conversion, upstream ships no Linux LibreOfficeKit engine')
-    }
-    for (const { extension } of officeConversion ? inputs : []) {
+    // LINUX-PATCH: this gate runs unchanged on Linux. patches/@deepseek-ai__libreoffice-kit@0.1.5.patch
+    // forces the WASM engine there, which is the path upstream documents for a platform with no
+    // published native engine.
+    for (const { extension } of inputs) {
       const converted = await fetch(new URL(`/desktop-smoke-office/${extension}`, ready.url), {
         headers: { cookie }, signal: AbortSignal.timeout(120_000),
       })
@@ -185,7 +179,7 @@ export function apply(ctx) {
         throw new Error(`desktop runtime: invalid ${extension} PDF output`)
       }
     }
-    if (officeConversion) {
+    {
       const cliResponse = await fetch(new URL('/desktop-smoke-office-cli', ready.url), {
         headers: { cookie }, signal: AbortSignal.timeout(120_000),
       })

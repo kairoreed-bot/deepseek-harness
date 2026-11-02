@@ -11,6 +11,7 @@ overrides:
 
 patchedDependencies:
   '@botiverse/oar@0.67.0': 65de2ca1966421e30893d8d4fed6a3d88e4247e131e7575fe791246e594538d6
+  '@deepseek-ai/libreoffice-kit@0.1.5': f81a6a219b31779cfe76ada2c87f937f2272889e6ea325d9a32e0b8c7283d393
   '@earendil-works/pi-ai@1.3.0': 4e1c90fd00aea42989664504668633033c1962e53c07860901edb4f72d843765
   '@electron/osx-sign@1.3.3': 280e7b2816caf01423097d24e79107a66afeb563a348630ce9928ae8499a5861
   '@fortune-sheet/core@1.0.4': 8791a230763dbf853fd65d627c68c31de37209992851377855e16cf08ea70532
@@ -886,7 +887,7 @@ importers:
         version: link:../../packages/workspace/workspace
       '@deepseek-ai/libreoffice-kit':
         specifier: ^0.1.5
-        version: 0.1.5
+        version: 0.1.5(patch_hash=f81a6a219b31779cfe76ada2c87f937f2272889e6ea325d9a32e0b8c7283d393)
       koffi:
         specifier: 3.1.1
         version: 3.1.1
@@ -3380,7 +3381,7 @@ importers:
         version: link:../../typert/registry
       '@deepseek-ai/libreoffice-kit':
         specifier: ^0.1.5
-        version: 0.1.5
+        version: 0.1.5(patch_hash=f81a6a219b31779cfe76ada2c87f937f2272889e6ea325d9a32e0b8c7283d393)
 
   packages/client/connection:
     dependencies:
@@ -8219,7 +8220,7 @@ importers:
         version: link:../../typert/protocol
       '@deepseek-ai/libreoffice-kit':
         specifier: ^0.1.5
-        version: 0.1.5
+        version: 0.1.5(patch_hash=f81a6a219b31779cfe76ada2c87f937f2272889e6ea325d9a32e0b8c7283d393)
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -14175,15 +14176,15 @@ importers:
       '@deepseek-ai/dsh-subagent':
         specifier: workspace:*
         version: link:../../subagent/subagent
-      '@deepseek-ai/dsh-tool-testkit':
-        specifier: workspace:*
-        version: link:../../test-support/tool-testkit
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:*
         version: link:../../core/system-prompt
       '@deepseek-ai/dsh-tool-executor-ptc':
         specifier: workspace:*
         version: link:../../core/tool-executor-ptc
+      '@deepseek-ai/dsh-tool-testkit':
+        specifier: workspace:*
+        version: link:../../test-support/tool-testkit
       '@deepseek-ai/dsh-tools':
         specifier: workspace:*
         version: link:../../core/tools
@@ -15671,7 +15672,7 @@ importers:
     dependencies:
       '@deepseek-ai/libreoffice-kit':
         specifier: ^0.1.5
-        version: 0.1.5
+        version: 0.1.5(patch_hash=f81a6a219b31779cfe76ada2c87f937f2272889e6ea325d9a32e0b8c7283d393)
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -26926,7 +26927,7 @@ snapshots:
   '@deepseek-ai/libreoffice-kit-win32-x64@0.1.5':
     optional: true
 
-  '@deepseek-ai/libreoffice-kit@0.1.5':
+  '@deepseek-ai/libreoffice-kit@0.1.5(patch_hash=f81a6a219b31779cfe76ada2c87f937f2272889e6ea325d9a32e0b8c7283d393)':
     dependencies:
       fflate: 0.8.2
       fontkit: 2.0.4

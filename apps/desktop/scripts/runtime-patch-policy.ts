@@ -9,6 +9,7 @@ export type DesktopRuntimePatch =
 /** Every workspace patch requires an explicit Desktop decision; runtime-only entries may add or replace a patch. */
 export const DESKTOP_RUNTIME_PATCHES: Readonly<Record<string, DesktopRuntimePatch>> = {
   '@botiverse/oar@0.67.0': { scope: 'workspace-only', reason: 'Patched OAR adapters are embedded in the provider bundle.' },
+  '@deepseek-ai/libreoffice-kit@0.1.5': { scope: 'shared', reason: 'LINUX-PATCH: force the WASM engine on Linux. Upstream publishes no Linux native engine, and inside app.asar the native-existence probe reports a package that is not installed, so the resolver throws instead of taking the WASM path it documents for Linux.' },
   '@earendil-works/pi-ai@1.3.0': { scope: 'shared', reason: 'Runtime providers need the streamed argument parsing fix.' },
   '@electron/osx-sign@1.3.3': { scope: 'workspace-only', reason: 'Signing executes on the build host.' },
   '@fortune-sheet/core@1.0.4': { scope: 'workspace-only', reason: 'Patched spreadsheet code is embedded in the client bundle.' },
