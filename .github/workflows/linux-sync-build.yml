@@ -96,6 +96,19 @@ jobs:
             git merge --abort
           else
             echo "conflict=false" >> "$GITHUB_OUTPUT"
+            # Upstream legitimately ships .github/workflows/**, but GITHUB_TOKEN can never hold the
+            # `workflows` scope, so any merge that touches them is unpushable from Actions:
+            #   ! [remote rejected] HEAD -> linux (refusing to allow a GitHub App to create or
+            #     update workflow ... without `workflows` permission)
+            # This fork runs only .github/workflows/linux-sync-build.yml and has every upstream
+            # workflow disabled, so keep our workflows and let upstream's changes go.
+            if ! git diff --cached --quiet -- .github/workflows 2>/dev/null; then
+              # Unstage whatever the merge brought (including brand-new files), then put HEAD's
+              # versions back in the index so the commit contains only our workflow.
+              git rm -r --cached --quiet --ignore-unmatch -- .github/workflows
+              git checkout HEAD -- .github/workflows
+              echo "kept the fork's own .github/workflows (upstream workflow changes ignored)"
+            fi
             if git diff --cached --quiet; then
               echo "advanced=false" >> "$GITHUB_OUTPUT"
               echo "Already up to date with upstream ${upstream_sha}."
