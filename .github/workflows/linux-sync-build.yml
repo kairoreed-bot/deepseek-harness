@@ -92,7 +92,7 @@ jobs:
             git diff --name-only --diff-filter=U > /tmp/conflicts.txt 2>/dev/null
             real_conflicts="$(grep -v '^\.github/workflows/' /tmp/conflicts.txt | sed '/^$/d')"
             if [ -z "$real_conflicts" ]; then
-              echo "workflow-only conflict; this fork does not track upstream workflows"
+              echo "workflow-only conflict; keeping the fork's workflow files"
               keep_fork_workflows
               status=0
             fi
