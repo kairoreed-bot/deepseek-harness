@@ -259,10 +259,18 @@ export class DesktopHostProcess {
     })
     child.once('error', (error) => { this.fail(error) })
     this.exitPromise = new Promise<void>((resolve) => {
-      child.once('close', (code) => {
+      child.once('close', (code, signal) => {
         const suffix = this.stderr.trim() === '' ? '' : `: ${this.stderr.trim()}`
+        // A clean exit code and a killing signal both land here, and the two mean opposite things:
+        // code 0 after a requested shutdown is our own teardown, while a signal is something
+        // outside this process ending it. Name which one it was, or the report cannot be diagnosed.
+        const how = signal === null ? `code ${String(code)}` : `signal ${signal}`
+        const requested = this.stopping ? 'shutdown requested' : 'no shutdown request'
+        // Always visible: a requested stop skips the failure report entirely, which is how a dead
+        // Host ends up with no crash report and no explanation anywhere.
+        console.error(`dsh desktop host process closed (${how}, ${requested})${suffix}`)
         if (code !== 0 && code !== null) this.fail(new Error(`dsh desktop host exited with ${String(code)}${suffix}`))
-        else this.fail(new Error(`dsh desktop host stopped${suffix}`))
+        else this.fail(new Error(`dsh desktop host stopped (${how}, ${requested})${suffix}`))
         resolve()
       })
     })
@@ -347,6 +355,9 @@ export class DesktopHostProcess {
   async stop(requireGraceful = false): Promise<void> {
     const child = this.child
     if (child === undefined) return
+    // Shutdown suppresses the failure report below, so without this line a requested stop is
+    // indistinguishable in the terminal from the Host vanishing on its own.
+    console.error(`dsh desktop: host shutdown requested${requireGraceful ? ' (graceful required)' : ''}`)
     this.stopping = true
     this.onPlatformSession?.(null)
     if (child.connected) child.send({ type: 'shutdown' }, (error) => { if (error !== null) this.fail(error) })
