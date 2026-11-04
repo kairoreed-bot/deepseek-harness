@@ -71,13 +71,36 @@ jobs:
           upstream_sha="$(git rev-parse upstream/master)"
           echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
 
+          # Upstream ships .github/workflows/**, but GITHUB_TOKEN can never hold the `workflows`
+          # scope, so a merge commit that contains them is unpushable from Actions:
+          #   ! [remote rejected] HEAD -> linux (refusing to allow a GitHub App to create or
+          #     update workflow ... without `workflows` permission)
+          # This fork runs only linux-sync-build.yml and has every upstream workflow disabled, so
+          # upstream's workflow changes are always discarded - including when they are the ONLY
+          # thing that conflicts, which would otherwise escalate a non-conflict to an issue.
+          keep_fork_workflows() {
+            git rm -r --cached --quiet --ignore-unmatch -- .github/workflows
+            git checkout HEAD -- .github/workflows
+            git clean -fdq -- .github/workflows
+            echo "kept the fork's own .github/workflows (upstream workflow changes ignored)"
+          }
+
           git merge --no-commit --no-ff upstream/master > /tmp/merge.log 2>&1
           status=$?
 
           if [ "$status" -ne 0 ]; then
+            git diff --name-only --diff-filter=U > /tmp/conflicts.txt 2>/dev/null
+            real_conflicts="$(grep -v '^\.github/workflows/' /tmp/conflicts.txt | sed '/^$/d')"
+            if [ -z "$real_conflicts" ]; then
+              echo "workflow-only conflict; this fork does not track upstream workflows"
+              keep_fork_workflows
+              status=0
+            fi
+          fi
+
+          if [ "$status" -ne 0 ]; then
             echo "conflict=true" >> "$GITHUB_OUTPUT"
             echo "advanced=false" >> "$GITHUB_OUTPUT"
-            git diff --name-only --diff-filter=U > /tmp/conflicts.txt 2>/dev/null
             {
               echo '### upstream merge conflict'
               echo
@@ -85,7 +108,7 @@ jobs:
               echo
               echo 'Conflicted files:'
               echo '```'
-              cat /tmp/conflicts.txt
+              echo "$real_conflicts"
               echo '```'
               echo '```'
               tail -30 /tmp/merge.log
@@ -96,19 +119,7 @@ jobs:
             git merge --abort
           else
             echo "conflict=false" >> "$GITHUB_OUTPUT"
-            # Upstream legitimately ships .github/workflows/**, but GITHUB_TOKEN can never hold the
-            # `workflows` scope, so any merge that touches them is unpushable from Actions:
-            #   ! [remote rejected] HEAD -> linux (refusing to allow a GitHub App to create or
-            #     update workflow ... without `workflows` permission)
-            # This fork runs only .github/workflows/linux-sync-build.yml and has every upstream
-            # workflow disabled, so keep our workflows and let upstream's changes go.
-            if ! git diff --cached --quiet -- .github/workflows 2>/dev/null; then
-              # Unstage whatever the merge brought (including brand-new files), then put HEAD's
-              # versions back in the index so the commit contains only our workflow.
-              git rm -r --cached --quiet --ignore-unmatch -- .github/workflows
-              git checkout HEAD -- .github/workflows
-              echo "kept the fork's own .github/workflows (upstream workflow changes ignored)"
-            fi
+            keep_fork_workflows
             if git diff --cached --quiet; then
               echo "advanced=false" >> "$GITHUB_OUTPUT"
               echo "Already up to date with upstream ${upstream_sha}."
@@ -124,11 +135,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          existing="$(gh issue list --label sync-conflict --state open --json number --jq '.[0].number' || true)"
+          # --repo is required: this job adds an `upstream` remote, and in a fork gh then resolves
+          # issue commands to the PARENT repository ("the 'deepseek-ai/deepseek-harness' repository
+          # has disabled issues") instead of this fork.
+          REPO="$GITHUB_REPOSITORY"
+          existing="$(gh issue list --repo "$REPO" --label sync-conflict --state open --json number --jq '.[0].number' || true)"
           if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body-file /tmp/issue-body.md
+            gh issue comment "$existing" --repo "$REPO" --body-file /tmp/issue-body.md
           else
-            gh issue create --title "upstream sync conflict" --label sync-conflict --body-file /tmp/issue-body.md
+            gh issue create --repo "$REPO" --title "upstream sync conflict" --label sync-conflict --body-file /tmp/issue-body.md
           fi
           echo "::warning::upstream merge conflict; see the sync-conflict issue"
 
@@ -201,12 +216,13 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           tag="linux-v${VERSION}"
-          if gh release view "$tag" >/dev/null 2>&1; then
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "release $tag already exists; uploading/refreshing assets only"
-            gh release upload "$tag" dist-linux/* --clobber
+            gh release upload "$tag" dist-linux/* --clobber --repo "$GITHUB_REPOSITORY"
             exit 0
           fi
           gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
             --target "$LINUX_BRANCH" \
             --title "DeepSeek Harness ${VERSION} (Linux x64)" \
             --notes "Automated Linux x64 build of ${VERSION}.
