@@ -3,7 +3,8 @@
 import type { Sharp } from 'sharp'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
-import { requireSharp } from './sharp.ts'
+import { requireSharp, sharpUsable } from './sharp.ts'
+import { readImageHeader } from './image-header.ts'
 
 /** Decoded metadata from a supported image. */
 export interface DetectedImage {
@@ -90,6 +91,7 @@ async function imageMetadata(image: Sharp): Promise<DetectedImage> {
  * @returns verified format and dimensions.
  */
 export async function probeImage(data: Uint8Array): Promise<DetectedImage> {
+  if (!sharpUsable()) return readImageHeader(data)
   const sharp = requireSharp()
   try {
     return await imageMetadata(sharp(data, { failOn: 'error', limitInputPixels: false }))
@@ -114,20 +116,32 @@ export interface DecodedImageLimits {
  * @returns verified format and dimensions.
  */
 export async function detectImage(data: Uint8Array, limits?: DecodedImageLimits): Promise<DetectedImage> {
+  if (!sharpUsable()) {
+    // No native decode available: the header carries the facts admission needs. The pixels are
+    // not proven to decode completely here, which the caller's pass-through path accepts.
+    const detected = readImageHeader(data)
+    assertImageLimits(detected, limits)
+    return detected
+  }
   const sharp = requireSharp()
   try {
     const image = sharp(data, { failOn: 'error', limitInputPixels: false })
     const detected = await imageMetadata(image)
-    if (limits?.maxPixels !== undefined && detected.width * detected.height > limits.maxPixels) {
-      throw new AttachmentError('Image exceeds the configured decoded-pixel limit.', 'IMAGE_TOO_MANY_PIXELS')
-    }
-    if (limits?.maxDimension !== undefined && Math.max(detected.width, detected.height) > limits.maxDimension) {
-      throw new AttachmentError('Image exceeds the configured per-side pixel limit.', 'IMAGE_DIMENSION_TOO_LARGE')
-    }
+    assertImageLimits(detected, limits)
     await image.raw().toBuffer()
     return detected
   } catch (error) {
     if (error instanceof AttachmentError) throw error
     throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE', { cause: error })
+  }
+}
+
+/** Reject an image whose intrinsic dimensions exceed the caller's admission limits. */
+function assertImageLimits(detected: DetectedImage, limits: DecodedImageLimits | undefined): void {
+  if (limits?.maxPixels !== undefined && detected.width * detected.height > limits.maxPixels) {
+    throw new AttachmentError('Image exceeds the configured decoded-pixel limit.', 'IMAGE_TOO_MANY_PIXELS')
+  }
+  if (limits?.maxDimension !== undefined && Math.max(detected.width, detected.height) > limits.maxDimension) {
+    throw new AttachmentError('Image exceeds the configured per-side pixel limit.', 'IMAGE_DIMENSION_TOO_LARGE')
   }
 }

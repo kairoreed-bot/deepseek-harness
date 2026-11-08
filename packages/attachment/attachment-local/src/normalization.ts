@@ -6,7 +6,7 @@ import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { encodeFirstWithinLimit, encodingLadder, isExhaustedEncoding } from './encoding.ts'
 import { detectImage, encodedAlphaIsCompatible } from './image.ts'
 import type { DetectedImage } from './image.ts'
-import { requireSharp } from './sharp.ts'
+import { requireSharp, sharpUsable, warnDecoderUnavailable } from './sharp.ts'
 
 /** Deployment-resolved policy for the persisted normalized attachment. */
 export interface NormalizationPolicy {
@@ -112,6 +112,12 @@ export async function normalizeImage(
   policy: NormalizationPolicy,
 ): Promise<NormalizedImage> {
   if (canPassThroughNormalization(detected, data.byteLength, policy)) {
+    return { data, mediaType: detected.mediaType, width: detected.width, height: detected.height }
+  }
+  if (!sharpUsable()) {
+    // No native encoder in this process: keep the admitted bytes instead of re-encoding, so an
+    // image still reaches the provider rather than taking the process down.
+    warnDecoderUnavailable('normalization')
     return { data, mediaType: detected.mediaType, width: detected.width, height: detected.height }
   }
   const sharp = requireSharp()

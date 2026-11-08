@@ -20,7 +20,7 @@ import {
   isExhaustedEncoding,
 } from './encoding.ts'
 import { detectImage, encodedAlphaIsCompatible, probeImage } from './image.ts'
-import { requireSharp } from './sharp.ts'
+import { requireSharp, sharpUsable, warnDecoderUnavailable } from './sharp.ts'
 
 /** Transform version included in every cache and upload-index identity. */
 export const REQUEST_IMAGE_TRANSFORM_VERSION = 'request-image-v6'
@@ -103,6 +103,17 @@ async function createRequestImage(
   if (target.width >= attachment.ref.width
     && target.height >= attachment.ref.height
     && attachment.data.byteLength <= target.maxBytes) {
+    return {
+      data: attachment.data,
+      mediaType: attachment.ref.mediaType,
+      width: attachment.ref.width,
+      height: attachment.ref.height,
+    }
+  }
+  if (!sharpUsable()) {
+    // The route wants a smaller copy than we can produce without the native decoder, so send the
+    // source size and let the route's own byte cap decide, instead of aborting the process.
+    warnDecoderUnavailable('model-request image resizing')
     return {
       data: attachment.data,
       mediaType: attachment.ref.mediaType,

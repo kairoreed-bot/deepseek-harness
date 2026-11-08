@@ -4,6 +4,9 @@ const state = vi.hoisted(() => ({ failure: new Error('sharp native binding unava
 
 vi.mock('../src/sharp.ts', () => ({
   requireSharp: () => { throw state.failure },
+  // The load-failure contract is about a sharp that fails to load, not about the platform guard.
+  sharpUsable: () => true,
+  warnDecoderUnavailable: () => {},
 }))
 
 import { detectImage, probeImage } from '../src/image.ts'
