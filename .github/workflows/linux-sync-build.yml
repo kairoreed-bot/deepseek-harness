@@ -184,10 +184,18 @@ jobs:
 
       - name: Install smoke-test tooling
         run: |
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-            xvfb x11-utils x11-xkb-utils xdotool openbox ffmpeg libgtk-3-0 libnss3 libasound2t64 \
-            rpm
+          set -uo pipefail
+          # The hosted runner's apt mirror intermittently fails DNS resolution
+          # ("Temporary failure resolving 'azure.archive.ubuntu.com'"), which fails this step and
+          # skips packaging, smoke and publish -- the whole 90 minute job wasted before it started.
+          # Retries inside apt, plus one retry of the whole install, ride that out.
+          packages=(xvfb x11-utils x11-xkb-utils xdotool openbox ffmpeg libgtk-3-0 libnss3 libasound2t64 rpm)
+          install_tooling() {
+            sudo apt-get update -qq -o Acquire::Retries=5
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+              -o Acquire::Retries=5 "${packages[@]}"
+          }
+          install_tooling || { echo "apt failed, retrying once after a pause"; sleep 20; install_tooling; }
 
       - name: Package linux-x64
         run: pnpm run package:desktop:linux:x64:unsigned
