@@ -139,6 +139,11 @@ jobs:
           # issue commands to the PARENT repository ("the 'deepseek-ai/deepseek-harness' repository
           # has disabled issues") instead of this fork.
           REPO="$GITHUB_REPOSITORY"
+          # The label has to exist before it can be applied: gh fails the whole step with
+          # "could not add label: 'sync-conflict' not found" otherwise, which turns a real merge
+          # conflict into an unreadable job failure. --force makes this idempotent.
+          gh label create sync-conflict --repo "$REPO" --color B60205 \
+            --description 'upstream sync conflict; an agent resolves it locally then pushes' --force >/dev/null 2>&1 || true
           existing="$(gh issue list --repo "$REPO" --label sync-conflict --state open --json number --jq '.[0].number' || true)"
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --repo "$REPO" --body-file /tmp/issue-body.md
